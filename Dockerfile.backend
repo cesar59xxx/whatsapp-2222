@@ -11,7 +11,7 @@ COPY server/package*.json ./
 
 RUN npm install && npm cache clean --force
 
-COPY server/ .
+COPY server/index.js ./
 
 RUN mkdir -p ./whatsapp-sessions && chmod 777 ./whatsapp-sessions
 
