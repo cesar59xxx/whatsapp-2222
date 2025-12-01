@@ -213,4 +213,4 @@ Se mesmo após seguir todos os passos ainda houver erros:
 5. Me envie para análise detalhada
 \`\`\`
 
-```typescript file="" isHidden
+\`\`\`typescript file="" isHidden
