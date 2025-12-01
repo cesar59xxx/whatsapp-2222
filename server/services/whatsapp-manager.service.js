@@ -1,10 +1,7 @@
 import pkg from "whatsapp-web.js"
-const { Client, LocalAuth, MessageMedia } = pkg
+const { Client, LocalAuth } = pkg
 import qrcode from "qrcode"
-import { WhatsAppSession } from "../models/whatsapp-session.model.js"
-import { Contact } from "../models/contact.model.js"
-import { Message } from "../models/message.model.js"
-import { messageQueue } from "../queues/message.queue.js"
+import { supabase } from "../config/supabase.js"
 import fs from "fs"
 
 /**
@@ -23,7 +20,7 @@ class WhatsAppManager {
   /**
    * Inicializar uma nova sessão WhatsApp
    */
-  async initializeSession(sessionId, tenantId) {
+  async initializeSession(sessionId) {
     // Verificar se já está inicializando ou ativo
     if (this.initializing.get(sessionId) || this.clients.has(sessionId)) {
       console.log(`[${sessionId}] Sessão já está ativa ou inicializando`)
@@ -35,14 +32,8 @@ class WhatsAppManager {
     try {
       console.log(`[${sessionId}] Inicializando sessão WhatsApp...`)
 
-      // Buscar configuração da sessão
-      const session = await WhatsAppSession.findOne({ sessionId })
-      if (!session) {
-        throw new Error("Sessão não encontrada no banco de dados")
-      }
-
       // Criar diretório de sessões se não existir
-      const sessionsPath = process.env.SESSIONS_PATH || "./sessions"
+      const sessionsPath = process.env.SESSIONS_PATH || "./whatsapp-sessions"
       if (!fs.existsSync(sessionsPath)) {
         fs.mkdirSync(sessionsPath, { recursive: true })
       }
@@ -62,6 +53,7 @@ class WhatsAppManager {
           "--disable-accelerated-2d-canvas",
           "--no-first-run",
           "--no-zygote",
+          "--single-process",
           "--disable-gpu",
         ],
       }
@@ -69,6 +61,7 @@ class WhatsAppManager {
       // Se estiver no Railway/produção, usar Chromium do sistema
       if (process.env.PUPPETEER_EXECUTABLE_PATH) {
         puppeteerConfig.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH
+        console.log(`[${sessionId}] Usando Chrome: ${process.env.PUPPETEER_EXECUTABLE_PATH}`)
       }
 
       // Criar cliente WhatsApp
@@ -85,27 +78,29 @@ class WhatsAppManager {
 
       // QR Code gerado
       client.on("qr", async (qr) => {
-        console.log(`[${sessionId}] QR Code gerado`)
+        console.log(`[${sessionId}] 📱 QR Code gerado`)
 
         try {
           // Converter QR para base64
           const qrCodeDataUrl = await qrcode.toDataURL(qr)
 
           // Atualizar no banco
-          await WhatsAppSession.findOneAndUpdate(
-            { sessionId },
-            {
+          await supabase
+            .from("whatsapp_sessions")
+            .update({
               status: "qr",
-              qrCode: qrCodeDataUrl,
-              qrCodeExpiry: new Date(Date.now() + 60000), // 60 segundos
-            },
-          )
+              qr_code: qrCodeDataUrl,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("session_id", sessionId)
 
           // Emitir via Socket.IO
-          this.emitToTenant(tenantId, "whatsapp:qr", {
-            sessionId,
-            qrCode: qrCodeDataUrl,
-          })
+          if (global.io) {
+            global.io.emit("whatsapp:qr", {
+              sessionId,
+              qrCode: qrCodeDataUrl,
+            })
+          }
         } catch (error) {
           console.error(`[${sessionId}] Erro ao processar QR:`, error)
         }
@@ -113,96 +108,98 @@ class WhatsAppManager {
 
       // Autenticando
       client.on("authenticated", async () => {
-        console.log(`[${sessionId}] Autenticado com sucesso`)
+        console.log(`[${sessionId}] ✅ Autenticado`)
 
-        await WhatsAppSession.findOneAndUpdate(
-          { sessionId },
-          {
+        await supabase
+          .from("whatsapp_sessions")
+          .update({
             status: "authenticated",
-            qrCode: null,
-            reconnectAttempts: 0,
-          },
-        )
+            qr_code: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("session_id", sessionId)
 
-        this.emitToTenant(tenantId, "whatsapp:authenticated", { sessionId })
+        if (global.io) {
+          global.io.emit("whatsapp:authenticated", { sessionId })
+        }
       })
 
       // Falha na autenticação
       client.on("auth_failure", async (error) => {
-        console.error(`[${sessionId}] Falha na autenticação:`, error)
+        console.error(`[${sessionId}] ❌ Falha na autenticação:`, error)
 
-        await WhatsAppSession.findOneAndUpdate(
-          { sessionId },
-          {
+        await supabase
+          .from("whatsapp_sessions")
+          .update({
             status: "error",
-            qrCode: null,
-          },
-        )
+            qr_code: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("session_id", sessionId)
 
-        this.emitToTenant(tenantId, "whatsapp:auth_failure", {
-          sessionId,
-          error: error.message,
-        })
+        if (global.io) {
+          global.io.emit("whatsapp:auth_failure", {
+            sessionId,
+            error: error.message,
+          })
+        }
       })
 
       // Cliente pronto
       client.on("ready", async () => {
-        console.log(`[${sessionId}] Cliente pronto!`)
+        console.log(`[${sessionId}] ✅ Cliente pronto!`)
 
         // Obter informações do WhatsApp
         const info = client.info
 
-        await WhatsAppSession.findOneAndUpdate(
-          { sessionId },
-          {
+        await supabase
+          .from("whatsapp_sessions")
+          .update({
             status: "ready",
-            phoneNumber: info.wid.user,
-            lastConnected: new Date(),
-            metadata: {
-              pushname: info.pushname,
-              platform: info.platform,
-              wid: info.wid._serialized,
-            },
-          },
-        )
+            phone_number: info.wid.user,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("session_id", sessionId)
 
-        this.emitToTenant(tenantId, "whatsapp:ready", {
-          sessionId,
-          phoneNumber: info.wid.user,
-        })
+        if (global.io) {
+          global.io.emit("whatsapp:ready", {
+            sessionId,
+            phoneNumber: info.wid.user,
+          })
+        }
       })
 
       // Desconectado
       client.on("disconnected", async (reason) => {
-        console.log(`[${sessionId}] Desconectado:`, reason)
+        console.log(`[${sessionId}] ⚠️ Desconectado:`, reason)
 
-        await WhatsAppSession.findOneAndUpdate(
-          { sessionId },
-          {
+        await supabase
+          .from("whatsapp_sessions")
+          .update({
             status: "disconnected",
-            lastDisconnected: new Date(),
-          },
-        )
+            updated_at: new Date().toISOString(),
+          })
+          .eq("session_id", sessionId)
 
         // Remover cliente do Map
         this.clients.delete(sessionId)
         this.initializing.delete(sessionId)
 
-        this.emitToTenant(tenantId, "whatsapp:disconnected", {
-          sessionId,
-          reason,
-        })
+        // Emitir via Socket.IO
+        if (global.io) {
+          global.io.emit("whatsapp:disconnected", { sessionId, reason })
+        }
 
         // Tentar reconectar após 5 segundos
         setTimeout(() => {
-          this.reconnectSession(sessionId, tenantId)
+          this.reconnectSession(sessionId)
         }, 5000)
       })
 
       // Nova mensagem recebida
       client.on("message", async (msg) => {
         try {
-          await this.handleIncomingMessage(msg, sessionId, tenantId)
+          await this.handleIncomingMessage(msg, sessionId)
         } catch (error) {
           console.error(`[${sessionId}] Erro ao processar mensagem:`, error)
         }
@@ -223,14 +220,19 @@ class WhatsAppManager {
       // Armazenar cliente no Map
       this.clients.set(sessionId, client)
 
-      console.log(`[${sessionId}] Cliente armazenado no Map`)
+      console.log(`[${sessionId}] ✅ Cliente armazenado`)
     } catch (error) {
-      console.error(`[${sessionId}] Erro ao inicializar:`, error)
+      console.error(`[${sessionId}] ❌ Erro ao inicializar:`, error)
 
-      await WhatsAppSession.findOneAndUpdate({ sessionId }, { status: "error" })
+      await supabase
+        .from("whatsapp_sessions")
+        .update({
+          status: "error",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("session_id", sessionId)
 
       this.initializing.delete(sessionId)
-
       throw error
     }
   }
@@ -238,11 +240,11 @@ class WhatsAppManager {
   /**
    * Processar mensagem recebida
    */
-  async handleIncomingMessage(msg, sessionId, tenantId) {
+  async handleIncomingMessage(msg, sessionId) {
     console.log(`[${sessionId}] Mensagem recebida de ${msg.from}`)
 
     // Obter ou criar contato
-    const contact = await this.getOrCreateContact(msg, sessionId, tenantId)
+    const contact = await this.getOrCreateContact(msg, sessionId)
 
     // Determinar tipo da mensagem
     let messageType = "text"
@@ -268,65 +270,91 @@ class WhatsAppManager {
     }
 
     // Criar mensagem no banco
-    const message = await Message.create({
-      tenantId,
-      contactId: contact._id,
-      sessionId,
-      whatsappMessageId: msg.id._serialized,
-      direction: "inbound",
-      type: messageType,
-      content,
-      status: "delivered",
-      timestamp: new Date(msg.timestamp * 1000),
-    })
+    const { data, error } = await supabase.from("messages").insert([
+      {
+        session_id: sessionId,
+        contact_id: contact.id,
+        whatsapp_message_id: msg.id._serialized,
+        direction: "inbound",
+        type: messageType,
+        content: JSON.stringify(content),
+        status: "delivered",
+        timestamp: new Date(msg.timestamp * 1000).toISOString(),
+      },
+    ])
+
+    if (error) {
+      console.error(`[${sessionId}] Erro ao criar mensagem no banco:`, error)
+      throw error
+    }
 
     // Atualizar última interação do contato
-    await Contact.findByIdAndUpdate(contact._id, {
-      lastInteraction: new Date(),
-      $inc: { totalMessages: 1 },
-    })
+    await supabase
+      .from("contacts")
+      .update({
+        last_interaction: new Date().toISOString(),
+        total_messages: contact.total_messages + 1,
+      })
+      .eq("id", contact.id)
 
     // Emitir mensagem via Socket.IO
-    this.emitToTenant(tenantId, "message:new", {
-      message: message.toObject(),
-      contact: contact.toObject(),
-    })
+    if (global.io) {
+      global.io.emit("message:new", {
+        message: data[0],
+        contact: contact,
+      })
+    }
 
     // Adicionar à fila para processamento de chatbot
-    await messageQueue.add("process-message", {
-      messageId: message._id,
-      tenantId,
-      contactId: contact._id,
-      sessionId,
-    })
+    // await messageQueue.add("process-message", {
+    //   messageId: message._id,
+    //   tenantId,
+    //   contactId: contact._id,
+    //   sessionId,
+    // })
   }
 
   /**
    * Obter ou criar contato
    */
-  async getOrCreateContact(msg, sessionId, tenantId) {
+  async getOrCreateContact(msg, sessionId) {
     const whatsappId = msg.from
     const phoneNumber = whatsappId.split("@")[0]
 
-    let contact = await Contact.findOne({ tenantId, whatsappId })
+    let { data: contactData, error: contactError } = await supabase
+      .from("contacts")
+      .select("*")
+      .eq("whatsapp_id", whatsappId)
+      .single()
 
-    if (!contact) {
+    if (contactError || !contactData) {
       // Buscar informações do contato
       const client = this.clients.get(sessionId)
       const whatsappContact = await client.getContactById(whatsappId)
 
-      contact = await Contact.create({
-        tenantId,
-        whatsappId,
-        name: whatsappContact.pushname || whatsappContact.name || phoneNumber,
-        phoneNumber,
-        avatar: await whatsappContact.getProfilePicUrl().catch(() => null),
-      })
+      const { data: newContactData, error: newContactError } = await supabase
+        .from("contacts")
+        .insert([
+          {
+            whatsapp_id: whatsappId,
+            name: whatsappContact.pushname || whatsappContact.name || phoneNumber,
+            phone_number: phoneNumber,
+            avatar: await whatsappContact.getProfilePicUrl().catch(() => null),
+            tenant_id: msg.from.split("@")[1], // Assuming tenant_id is part of the whatsappId
+          },
+        ])
+        .select()
 
-      console.log(`[${sessionId}] Novo contato criado: ${contact.name}`)
+      if (newContactError) {
+        console.error(`[${sessionId}] Erro ao criar novo contato:`, newContactError)
+        throw newContactError
+      }
+
+      contactData = newContactData[0]
+      console.log(`[${sessionId}] Novo contato criado: ${contactData.name}`)
     }
 
-    return contact
+    return contactData
   }
 
   /**
@@ -343,13 +371,13 @@ class WhatsAppManager {
 
     const status = statusMap[ack] || "pending"
 
-    await Message.findOneAndUpdate({ whatsappMessageId: msg.id._serialized }, { status })
+    await supabase.from("messages").update({ status }).eq("whatsapp_message_id", msg.id._serialized)
   }
 
   /**
    * Enviar mensagem
    */
-  async sendMessage(sessionId, to, content, type = "text") {
+  async sendMessage(sessionId, to, content) {
     const client = this.clients.get(sessionId)
 
     if (!client) {
@@ -359,10 +387,10 @@ class WhatsAppManager {
     let sentMessage
 
     try {
-      if (type === "text") {
+      if (content.type === "text") {
         sentMessage = await client.sendMessage(to, content.text)
-      } else if (type === "image" || type === "video" || type === "document") {
-        const media = new MessageMedia(content.mimeType, content.mediaData, content.filename)
+      } else if (content.type === "image" || content.type === "video" || content.type === "document") {
+        const media = new pkg.MessageMedia(content.mimeType, content.mediaData, content.filename)
         sentMessage = await client.sendMessage(to, media, {
           caption: content.caption,
         })
@@ -378,24 +406,40 @@ class WhatsAppManager {
   /**
    * Tentar reconectar sessão
    */
-  async reconnectSession(sessionId, tenantId) {
-    const session = await WhatsAppSession.findOne({ sessionId })
+  async reconnectSession(sessionId) {
+    const { data: sessionData, error: sessionError } = await supabase
+      .from("whatsapp_sessions")
+      .select("*")
+      .eq("session_id", sessionId)
+      .single()
 
-    if (!session || !session.isActive) {
+    if (sessionError || !sessionData || !sessionData.is_active) {
       return
     }
 
-    if (session.reconnectAttempts >= session.maxReconnectAttempts) {
+    if (sessionData.reconnect_attempts >= sessionData.max_reconnect_attempts) {
       console.log(`[${sessionId}] Máximo de tentativas de reconexão atingido`)
-      await WhatsAppSession.findOneAndUpdate({ sessionId }, { status: "error" })
+      await supabase
+        .from("whatsapp_sessions")
+        .update({
+          status: "error",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("session_id", sessionId)
       return
     }
 
-    console.log(`[${sessionId}] Tentando reconectar... (tentativa ${session.reconnectAttempts + 1})`)
+    console.log(`[${sessionId}] Tentando reconectar... (tentativa ${sessionData.reconnect_attempts + 1})`)
 
-    await WhatsAppSession.findOneAndUpdate({ sessionId }, { reconnectAttempts: session.reconnectAttempts + 1 })
+    await supabase
+      .from("whatsapp_sessions")
+      .update({
+        reconnect_attempts: sessionData.reconnect_attempts + 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("session_id", sessionId)
 
-    await this.initializeSession(sessionId, tenantId)
+    await this.initializeSession(sessionId)
   }
 
   /**
@@ -411,13 +455,13 @@ class WhatsAppManager {
 
     this.initializing.delete(sessionId)
 
-    await WhatsAppSession.findOneAndUpdate(
-      { sessionId },
-      {
+    await supabase
+      .from("whatsapp_sessions")
+      .update({
         status: "disconnected",
-        lastDisconnected: new Date(),
-      },
-    )
+        updated_at: new Date().toISOString(),
+      })
+      .eq("session_id", sessionId)
   }
 
   /**
@@ -432,16 +476,6 @@ class WhatsAppManager {
    */
   isSessionActive(sessionId) {
     return this.clients.has(sessionId)
-  }
-
-  /**
-   * Emitir evento para tenant via Socket.IO
-   */
-  emitToTenant(tenantId, event, data) {
-    // Será implementado no módulo Socket.IO
-    if (global.io) {
-      global.io.to(`tenant:${tenantId}`).emit(event, data)
-    }
   }
 }
 
