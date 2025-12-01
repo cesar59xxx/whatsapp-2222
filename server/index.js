@@ -67,6 +67,10 @@ app.get("/", (req, res) => {
     endpoints: {
       health: "/health",
       sessions: "/api/whatsapp/sessions",
+      qr: "/api/whatsapp/sessions/:sessionId/qr",
+      disconnect: "/api/whatsapp/sessions/:sessionId/disconnect",
+      connect: "/api/whatsapp/sessions/:sessionId/connect",
+      sendMessage: "/api/whatsapp/send",
     },
   })
 })
@@ -96,6 +100,39 @@ app.post("/api/whatsapp/sessions", (req, res) => {
       name,
       status: "pending",
     },
+  })
+})
+
+app.get("/api/whatsapp/sessions/:sessionId/qr", (req, res) => {
+  console.log("[v0] GET /api/whatsapp/sessions/:sessionId/qr:", req.params.sessionId)
+  res.json({
+    qr: null,
+    status: "pending",
+    message: "QR code será gerado quando WhatsApp for implementado",
+  })
+})
+
+app.post("/api/whatsapp/sessions/:sessionId/disconnect", (req, res) => {
+  console.log("[v0] POST /api/whatsapp/sessions/:sessionId/disconnect:", req.params.sessionId)
+  res.json({
+    success: true,
+    message: "Desconexão será implementada em breve",
+  })
+})
+
+app.post("/api/whatsapp/sessions/:sessionId/connect", (req, res) => {
+  console.log("[v0] POST /api/whatsapp/sessions/:sessionId/connect:", req.params.sessionId)
+  res.json({
+    success: true,
+    message: "Conexão será implementada em breve",
+  })
+})
+
+app.post("/api/whatsapp/send", (req, res) => {
+  console.log("[v0] POST /api/whatsapp/send:", req.body)
+  res.json({
+    success: true,
+    message: "Envio de mensagens será implementado em breve",
   })
 })
 
