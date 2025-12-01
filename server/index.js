@@ -59,6 +59,70 @@ app.get("/api/health", (req, res) => {
   })
 })
 
+app.get("/api/auth/me", (req, res) => {
+  console.log("[v0] GET /api/auth/me")
+  res.json({
+    user: {
+      id: "demo-user",
+      email: "cesar.mediotec@gmail.com",
+      name: "Demo User",
+      role: "admin",
+    },
+    message: "Auth funcionando - usuário demo",
+  })
+})
+
+app.post("/api/auth/login", (req, res) => {
+  console.log("[v0] POST /api/auth/login:", req.body)
+  const { email, password } = req.body
+
+  res.json({
+    success: true,
+    user: {
+      id: "demo-user",
+      email: email || "demo@example.com",
+      name: "Demo User",
+      role: "admin",
+    },
+    token: "demo-token-" + Date.now(),
+    message: "Login funcionando - auth será implementado em breve",
+  })
+})
+
+app.post("/api/auth/register", (req, res) => {
+  console.log("[v0] POST /api/auth/register:", req.body)
+  const { email, password, name } = req.body
+
+  res.status(201).json({
+    success: true,
+    user: {
+      id: "demo-user-" + Date.now(),
+      email,
+      name,
+      role: "user",
+    },
+    token: "demo-token-" + Date.now(),
+    message: "Registro funcionando - auth será implementado em breve",
+  })
+})
+
+app.post("/api/auth/logout", (req, res) => {
+  console.log("[v0] POST /api/auth/logout")
+  res.json({
+    success: true,
+    message: "Logout realizado com sucesso",
+  })
+})
+
+app.post("/api/auth/refresh", (req, res) => {
+  console.log("[v0] POST /api/auth/refresh")
+  res.json({
+    success: true,
+    token: "demo-token-refreshed-" + Date.now(),
+    message: "Token refresh funcionando",
+  })
+})
+
 app.get("/", (req, res) => {
   res.json({
     message: "WhatsApp CRM Backend API",
@@ -66,6 +130,7 @@ app.get("/", (req, res) => {
     version: "2.0.0",
     endpoints: {
       health: "/health",
+      auth: "/api/auth/*",
       sessions: "/api/whatsapp/sessions",
       qr: "/api/whatsapp/sessions/:sessionId/qr",
       disconnect: "/api/whatsapp/sessions/:sessionId/disconnect",
