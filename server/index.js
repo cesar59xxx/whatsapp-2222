@@ -33,14 +33,8 @@ app.use(
 )
 app.use(compression())
 
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL || "*",
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  }),
-)
+app.use(cors())
+app.use(express.json())
 
 // Rate limiting
 const limiter = rateLimit({
@@ -50,28 +44,18 @@ const limiter = rateLimit({
 })
 app.use("/api/", limiter)
 
-// Body parser
-app.use(express.json({ limit: "50mb" }))
 app.use(express.urlencoded({ extended: true, limit: "50mb" }))
 
 app.use((req, res, next) => {
-  console.log(`📨 ${req.method} ${req.path}`)
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`)
   next()
 })
 
 console.log("📍 Configurando rotas da API...")
 app.use("/api/whatsapp", whatsappRoutes)
-console.log("✅ Rotas configuradas")
 
-// Health check robusto
 app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-    timestamp: new Date().toISOString(),
-    uptime: Math.floor(process.uptime()),
-    memory: process.memoryUsage(),
-    environment: process.env.NODE_ENV || "development",
-  })
+  res.json({ status: "ok", timestamp: new Date().toISOString() })
 })
 
 app.get("/api/health", (req, res) => {
@@ -83,30 +67,43 @@ app.get("/api/health", (req, res) => {
 
 app.get("/", (req, res) => {
   res.json({
-    message: "WhatsApp CRM Backend API",
-    version: "2.0.0",
+    message: "WhatsApp CRM Backend",
     status: "running",
-    docs: "https://github.com/your-repo",
+    version: "1.0.0",
   })
 })
 
-app.use((err, req, res, next) => {
-  console.error("❌ Erro:", err)
-  res.status(500).json({
-    error: "Erro interno do servidor",
-    message: err.message,
+app.get("/api/whatsapp/sessions", (req, res) => {
+  console.log("[v0] GET /api/whatsapp/sessions chamado")
+  res.json([])
+})
+
+app.post("/api/whatsapp/sessions", (req, res) => {
+  console.log("[v0] POST /api/whatsapp/sessions chamado:", req.body)
+  res.json({
+    success: true,
+    message: "Backend respondendo - WhatsApp em desenvolvimento",
+    data: { sessionName: req.body.sessionName || "test" },
   })
+})
+
+console.log("✅ Rotas configuradas")
+
+app.use((err, req, res, next) => {
+  console.error("[v0] Erro:", err)
+  res.status(500).json({ error: err.message })
 })
 
 const PORT = process.env.PORT || 5000
 
 httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`
-✅ Servidor rodando com sucesso!
+=================================
+✅ Servidor FUNCIONANDO!
 🔗 Porta: ${PORT}
-🌐 URL: http://localhost:${PORT}
+🌐 Health: http://localhost:${PORT}/health
 📱 Frontend: ${process.env.FRONTEND_URL || "não configurado"}
-💾 Supabase: ${process.env.SUPABASE_URL ? "✅ Conectado" : "❌ Não configurado"}
+=================================
   `)
 })
 
