@@ -38,10 +38,14 @@ export default function WhatsAppPage() {
 
   const loadSessions = async () => {
     try {
+      console.log("[v0] Loading sessions...")
       const data = await apiClient.getSessions()
+      console.log("[v0] Sessions received:", data)
+      console.log("[v0] Sessions array:", data.sessions)
+      console.log("[v0] Sessions length:", data.sessions?.length)
       setSessions(data.sessions)
     } catch (error) {
-      console.error("Failed to load sessions:", error)
+      console.error("[v0] Failed to load sessions:", error)
     } finally {
       setIsLoading(false)
     }
@@ -59,26 +63,36 @@ export default function WhatsAppPage() {
     if (!newSessionName.trim()) return
 
     try {
-      await apiClient.createSession({ name: newSessionName })
+      console.log("[v0] Creating session with name:", newSessionName)
+      const result = await apiClient.createSession({ name: newSessionName })
+      console.log("[v0] Session created:", result)
       setNewSessionName("")
       await loadSessions()
     } catch (error: any) {
+      console.error("[v0] Error creating session:", error)
       alert(error.message || "Erro ao criar sessão")
     }
   }
 
   const handleConnectSession = async (sessionId: string) => {
     try {
+      console.log("[v0] Connecting session:", sessionId)
       await apiClient.connectSession(sessionId)
 
-      // Aguardar 2 segundos e atualizar para pegar QR Code
       setTimeout(async () => {
+        console.log("[v0] Fetching QR code for session:", sessionId)
         const data = await apiClient.get(`/api/whatsapp/sessions/${sessionId}/qr`)
+        console.log("[v0] QR code data:", data)
         if (data.qrCode) {
           setQrCodeDialog({ open: true, qrCode: data.qrCode })
+        } else {
+          console.log("[v0] No QR code yet, keep refreshing...")
         }
-      }, 2000)
+        // Atualizar lista de sessões
+        await loadSessions()
+      }, 5000)
     } catch (error: any) {
+      console.error("[v0] Error connecting session:", error)
       alert(error.message || "Erro ao conectar sessão")
     }
   }
