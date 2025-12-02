@@ -6,7 +6,7 @@ import helmet from "helmet"
 import compression from "compression"
 import rateLimit from "express-rate-limit"
 import dotenv from "dotenv"
-import { whatsappManager } from "./services/whatsapp-manager.service.js"
+import { whatsappManager } from "./services/whatsapp-manager-simple.js"
 import { supabase } from "./config/supabase.js"
 
 dotenv.config()
