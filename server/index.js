@@ -141,8 +141,42 @@ app.get("/", (req, res) => {
       connect: "/api/whatsapp/sessions/:sessionId/connect",
       sendMessage: "/api/whatsapp/send",
       debugWhatsApp: "/api/debug/whatsapp",
+      testSupabase: "/api/test/supabase",
     },
   })
+})
+
+app.get("/api/test/supabase", async (req, res) => {
+  try {
+    console.log("[v0] ========== TESTING SUPABASE ==========")
+    console.log("[v0] Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL)
+    console.log("[v0] Has Service Role Key:", !!process.env.SUPABASE_SERVICE_ROLE_KEY)
+    console.log("[v0] Key length:", process.env.SUPABASE_SERVICE_ROLE_KEY?.length)
+
+    // Test simple query
+    const { data, error, count } = await supabase.from("whatsapp_sessions").select("*", { count: "exact" })
+
+    console.log("[v0] Query result:")
+    console.log("[v0] - Error:", JSON.stringify(error, null, 2))
+    console.log("[v0] - Data:", JSON.stringify(data, null, 2))
+    console.log("[v0] - Count:", count)
+    console.log("[v0] ==========================================")
+
+    res.json({
+      success: !error,
+      error: error,
+      data: data,
+      count: count,
+      config: {
+        hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+        hasKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+        url: process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 50) + "...",
+      },
+    })
+  } catch (error) {
+    console.error("[v0] Test error:", error)
+    res.status(500).json({ error: error.message, stack: error.stack })
+  }
 })
 
 app.get("/api/whatsapp/sessions", async (req, res) => {
