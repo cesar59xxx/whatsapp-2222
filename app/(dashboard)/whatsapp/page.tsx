@@ -38,14 +38,33 @@ export default function WhatsAppPage() {
 
   const loadSessions = async () => {
     try {
+      console.log("[v0] ========================================")
       console.log("[v0] Loading sessions...")
+      console.log("[v0] API URL:", process.env.NEXT_PUBLIC_API_URL)
+
       const data = await apiClient.getSessions()
-      console.log("[v0] Sessions received:", data)
+
+      console.log("[v0] Full response:", JSON.stringify(data, null, 2))
       console.log("[v0] Sessions array:", data.sessions)
+      console.log("[v0] Sessions type:", typeof data.sessions)
+      console.log("[v0] Is Array?:", Array.isArray(data.sessions))
       console.log("[v0] Sessions length:", data.sessions?.length)
-      setSessions(data.sessions)
+
+      if (data.sessions && data.sessions.length > 0) {
+        console.log("[v0] ✅ Found sessions:", data.sessions.length)
+        data.sessions.forEach((session, index) => {
+          console.log(`[v0] Session ${index}:`, session)
+        })
+      } else {
+        console.log("[v0] ⚠️ No sessions found in response")
+      }
+      console.log("[v0] ========================================")
+
+      setSessions(data.sessions || [])
     } catch (error) {
-      console.error("[v0] Failed to load sessions:", error)
+      console.error("[v0] ❌ Failed to load sessions:", error)
+      console.error("[v0] Error details:", error.message)
+      console.error("[v0] Error stack:", error.stack)
     } finally {
       setIsLoading(false)
     }
@@ -63,13 +82,25 @@ export default function WhatsAppPage() {
     if (!newSessionName.trim()) return
 
     try {
+      console.log("[v0] ========================================")
       console.log("[v0] Creating session with name:", newSessionName)
       const result = await apiClient.createSession({ name: newSessionName })
-      console.log("[v0] Session created:", result)
+      console.log("[v0] Session create response:", JSON.stringify(result, null, 2))
+      console.log("[v0] ========================================")
+
       setNewSessionName("")
+
+      // Fechar o dialog
+      const closeButton = document.querySelector('[role="dialog"] button[type="button"]')
+      if (closeButton) closeButton.click()
+
+      // Recarregar sessões imediatamente
       await loadSessions()
+
+      alert("Sessão criada com sucesso! Aguarde a conexão...")
     } catch (error: any) {
-      console.error("[v0] Error creating session:", error)
+      console.error("[v0] ❌ Error creating session:", error)
+      console.error("[v0] Error message:", error.message)
       alert(error.message || "Erro ao criar sessão")
     }
   }

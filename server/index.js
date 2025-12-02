@@ -147,33 +147,55 @@ app.get("/", (req, res) => {
 
 app.get("/api/whatsapp/sessions", async (req, res) => {
   try {
+    console.log("[v0] ========================================")
     console.log("[v0] GET /api/whatsapp/sessions - fetching real sessions")
+    console.log("[v0] Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 30) + "...")
+    console.log("[v0] Has service role key:", !!process.env.SUPABASE_SERVICE_ROLE_KEY)
 
     const { data: sessions, error } = await supabase
       .from("whatsapp_sessions")
       .select("*")
       .order("created_at", { ascending: false })
 
-    if (error) throw error
+    console.log("[v0] Supabase query result:")
+    console.log("[v0] - Error:", error)
+    console.log("[v0] - Data:", sessions)
+    console.log("[v0] - Sessions count:", sessions?.length || 0)
+
+    if (error) {
+      console.error("[v0] Supabase error:", error)
+      throw error
+    }
 
     const transformedSessions =
-      sessions?.map((session) => ({
-        _id: session.id,
-        sessionId: session.session_id,
-        name: session.name,
-        phoneNumber: session.phone_number,
-        status: session.status,
-        qrCode: session.qr_code,
-        lastConnected: session.last_connected,
-        isConnected: session.status === "ready",
-      })) || []
+      sessions?.map((session) => {
+        const transformed = {
+          _id: session.id,
+          sessionId: session.session_id,
+          name: session.name,
+          phoneNumber: session.phone_number,
+          status: session.status,
+          qrCode: session.qr_code,
+          lastConnected: session.last_connected,
+          isConnected: session.status === "ready",
+        }
+        console.log("[v0] Transformed session:", transformed)
+        return transformed
+      }) || []
+
+    console.log("[v0] Returning sessions:", {
+      count: transformedSessions.length,
+      sessions: transformedSessions,
+    })
+    console.log("[v0] ========================================")
 
     res.json({
       sessions: transformedSessions,
       total: transformedSessions.length,
     })
   } catch (error) {
-    console.error("Error fetching sessions:", error)
+    console.error("[v0] ❌ Error fetching sessions:", error)
+    console.error("[v0] Error stack:", error.stack)
     res.status(500).json({ error: error.message })
   }
 })
