@@ -155,9 +155,21 @@ app.get("/api/whatsapp/sessions", async (req, res) => {
 
     if (error) throw error
 
+    const transformedSessions =
+      sessions?.map((session) => ({
+        _id: session.id,
+        sessionId: session.session_id,
+        name: session.name,
+        phoneNumber: session.phone_number,
+        status: session.status,
+        qrCode: session.qr_code,
+        lastConnected: session.last_connected,
+        isConnected: session.status === "ready",
+      })) || []
+
     res.json({
-      sessions: sessions || [],
-      total: sessions?.length || 0,
+      sessions: transformedSessions,
+      total: transformedSessions.length,
     })
   } catch (error) {
     console.error("Error fetching sessions:", error)
@@ -191,10 +203,27 @@ app.post("/api/whatsapp/sessions", async (req, res) => {
 
     if (error) throw error
 
+    const transformedSession = {
+      _id: newSession.id,
+      sessionId: newSession.session_id,
+      name: newSession.name,
+      status: newSession.status,
+      isConnected: false,
+    }
+
+    setTimeout(async () => {
+      try {
+        await whatsappManager.initializeSession(sessionId)
+        console.log(`[v0] Auto-initialized WhatsApp session: ${sessionId}`)
+      } catch (error) {
+        console.error(`[v0] Failed to auto-initialize session ${sessionId}:`, error)
+      }
+    }, 1000)
+
     res.status(201).json({
       success: true,
-      message: "Sessão criada - clique em conectar para gerar QR code",
-      session: newSession,
+      message: "Sessão criada - iniciando conexão...",
+      session: transformedSession,
     })
   } catch (error) {
     console.error("Error creating session:", error)
