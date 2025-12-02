@@ -6,6 +6,8 @@ import helmet from "helmet"
 import compression from "compression"
 import rateLimit from "express-rate-limit"
 import dotenv from "dotenv"
+import { whatsappManager } from "./services/whatsapp-manager.service.js"
+import { supabase } from "./config/supabase.js"
 
 dotenv.config()
 
@@ -142,77 +144,142 @@ app.get("/", (req, res) => {
   })
 })
 
-app.get("/api/whatsapp/sessions", (req, res) => {
-  console.log("[v0] GET /api/whatsapp/sessions")
-  res.json({
-    sessions: mockSessions,
-    total: mockSessions.length,
-    message: "Backend funcionando - WhatsApp será implementado em breve",
-  })
-})
+app.get("/api/whatsapp/sessions", async (req, res) => {
+  try {
+    console.log("[v0] GET /api/whatsapp/sessions - fetching real sessions")
 
-app.post("/api/whatsapp/sessions", (req, res) => {
-  console.log("[v0] POST /api/whatsapp/sessions:", req.body)
-  const { name } = req.body
+    const { data: sessions, error } = await supabase
+      .from("whatsapp_sessions")
+      .select("*")
+      .order("created_at", { ascending: false })
 
-  if (!name) {
-    return res.status(400).json({ error: "Nome da sessão é obrigatório" })
+    if (error) throw error
+
+    res.json({
+      sessions: sessions || [],
+      total: sessions?.length || 0,
+    })
+  } catch (error) {
+    console.error("Error fetching sessions:", error)
+    res.status(500).json({ error: error.message })
   }
+})
 
-  const newSession = {
-    _id: "session-" + Date.now(),
-    sessionId: "session-" + Date.now(),
-    name,
-    status: "qr",
-    isConnected: false,
-    lastConnected: null,
-    phoneNumber: null,
+app.post("/api/whatsapp/sessions", async (req, res) => {
+  try {
+    console.log("[v0] POST /api/whatsapp/sessions:", req.body)
+    const { name } = req.body
+
+    if (!name) {
+      return res.status(400).json({ error: "Nome da sessão é obrigatório" })
+    }
+
+    const sessionId = `session-${Date.now()}`
+
+    const { data: newSession, error } = await supabase
+      .from("whatsapp_sessions")
+      .insert([
+        {
+          session_id: sessionId,
+          name,
+          status: "disconnected",
+          is_active: true,
+        },
+      ])
+      .select()
+      .single()
+
+    if (error) throw error
+
+    res.status(201).json({
+      success: true,
+      message: "Sessão criada - clique em conectar para gerar QR code",
+      session: newSession,
+    })
+  } catch (error) {
+    console.error("Error creating session:", error)
+    res.status(500).json({ error: error.message })
   }
-
-  mockSessions.push(newSession)
-
-  res.status(201).json({
-    success: true,
-    message: "Sessão criada - conecte para gerar QR code",
-    session: newSession,
-  })
 })
 
-app.get("/api/whatsapp/sessions/:sessionId/qr", (req, res) => {
-  console.log("[v0] GET /api/whatsapp/sessions/:sessionId/qr:", req.params.sessionId)
+app.get("/api/whatsapp/sessions/:sessionId/qr", async (req, res) => {
+  try {
+    const { sessionId } = req.params
+    console.log("[v0] GET /api/whatsapp/sessions/:sessionId/qr:", sessionId)
 
-  const mockQRCode =
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAEsCAIAAAD2HxkiAAAG6ElEQVR42u3dQW4jMQwFwJz/0r5Fjt5dBRaQzVSSH4UBBpPJZP78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+Q=="
+    const { data: session, error } = await supabase
+      .from("whatsapp_sessions")
+      .select("qr_code, status")
+      .eq("session_id", sessionId)
+      .single()
 
-  res.json({
-    qrCode: mockQRCode,
-    status: "qr",
-    message: "QR code demo - escaneie para testar (não funcionará de verdade ainda)",
-  })
+    if (error) throw error
+
+    res.json({
+      qrCode: session.qr_code,
+      status: session.status,
+      message: session.qr_code ? "Escaneie o QR code no WhatsApp" : "Conecte a sessão para gerar QR code",
+    })
+  } catch (error) {
+    console.error("Error fetching QR code:", error)
+    res.status(500).json({ error: error.message })
+  }
 })
 
-app.post("/api/whatsapp/sessions/:sessionId/disconnect", (req, res) => {
-  console.log("[v0] POST /api/whatsapp/sessions/:sessionId/disconnect:", req.params.sessionId)
-  res.json({
-    success: true,
-    message: "Desconexão será implementada em breve",
-  })
+app.post("/api/whatsapp/sessions/:sessionId/disconnect", async (req, res) => {
+  try {
+    const { sessionId } = req.params
+    console.log("[v0] POST /api/whatsapp/sessions/:sessionId/disconnect:", sessionId)
+
+    await whatsappManager.disconnectSession(sessionId)
+
+    res.json({
+      success: true,
+      message: "Sessão desconectada com sucesso",
+    })
+  } catch (error) {
+    console.error("Error disconnecting session:", error)
+    res.status(500).json({ error: error.message })
+  }
 })
 
-app.post("/api/whatsapp/sessions/:sessionId/connect", (req, res) => {
-  console.log("[v0] POST /api/whatsapp/sessions/:sessionId/connect:", req.params.sessionId)
-  res.json({
-    success: true,
-    message: "Conexão será implementada em breve",
-  })
+app.post("/api/whatsapp/sessions/:sessionId/connect", async (req, res) => {
+  try {
+    const { sessionId } = req.params
+    console.log("[v0] POST /api/whatsapp/sessions/:sessionId/connect:", sessionId)
+
+    await whatsappManager.initializeSession(sessionId)
+
+    res.json({
+      success: true,
+      message: "Sessão iniciando - aguarde o QR code",
+    })
+  } catch (error) {
+    console.error("Error connecting session:", error)
+    res.status(500).json({ error: error.message })
+  }
 })
 
-app.post("/api/whatsapp/send", (req, res) => {
-  console.log("[v0] POST /api/whatsapp/send:", req.body)
-  res.json({
-    success: true,
-    message: "Envio de mensagens será implementado em breve",
-  })
+app.post("/api/whatsapp/send", async (req, res) => {
+  try {
+    console.log("[v0] POST /api/whatsapp/send:", req.body)
+    const { sessionId, to, content } = req.body
+
+    if (!sessionId || !to || !content) {
+      return res.status(400).json({ error: "sessionId, to e content são obrigatórios" })
+    }
+
+    const sentMessage = await whatsappManager.sendMessage(sessionId, to, content)
+
+    res.json({
+      success: true,
+      message: "Mensagem enviada com sucesso",
+      messageId: sentMessage.id._serialized,
+    })
+  } catch (error) {
+    console.error("Error sending message:", error)
+    res.status(500).json({ error: error.message })
+  }
 })
 
 app.use((err, req, res, next) => {
@@ -239,6 +306,7 @@ httpServer.listen(PORT, "0.0.0.0", () => {
 ║ 🔗 Porta: ${PORT.toString().padEnd(23)}║
 ║ 🌐 Health: /health ${" ".repeat(15)}║
 ║ 📱 Frontend: ${(process.env.FRONTEND_URL || "não configurado").substring(0, 18).padEnd(18)}║
+║ 💬 WhatsApp: ATIVO ${" ".repeat(14)}║
 ╚═══════════════════════════════════╝
   `)
 })
