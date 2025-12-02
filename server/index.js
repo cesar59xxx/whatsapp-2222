@@ -44,6 +44,8 @@ app.use((req, res, next) => {
   next()
 })
 
+const mockSessions = []
+
 app.get("/health", (req, res) => {
   res.status(200).json({
     status: "ok",
@@ -143,8 +145,8 @@ app.get("/", (req, res) => {
 app.get("/api/whatsapp/sessions", (req, res) => {
   console.log("[v0] GET /api/whatsapp/sessions")
   res.json({
-    sessions: [],
-    total: 0,
+    sessions: mockSessions,
+    total: mockSessions.length,
     message: "Backend funcionando - WhatsApp será implementado em breve",
   })
 })
@@ -157,23 +159,35 @@ app.post("/api/whatsapp/sessions", (req, res) => {
     return res.status(400).json({ error: "Nome da sessão é obrigatório" })
   }
 
+  const newSession = {
+    _id: "session-" + Date.now(),
+    sessionId: "session-" + Date.now(),
+    name,
+    status: "qr",
+    isConnected: false,
+    lastConnected: null,
+    phoneNumber: null,
+  }
+
+  mockSessions.push(newSession)
+
   res.status(201).json({
     success: true,
-    message: "Backend respondendo - sessão será criada em breve",
-    session: {
-      session_id: "temp-" + Date.now(),
-      name,
-      status: "pending",
-    },
+    message: "Sessão criada - conecte para gerar QR code",
+    session: newSession,
   })
 })
 
 app.get("/api/whatsapp/sessions/:sessionId/qr", (req, res) => {
   console.log("[v0] GET /api/whatsapp/sessions/:sessionId/qr:", req.params.sessionId)
+
+  const mockQRCode =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAEsCAIAAAD2HxkiAAAG6ElEQVR42u3dQW4jMQwFwJz/0r5Fjt5dBRaQzVSSH4UBBpPJZP78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+fPnz58/f/78+Q=="
+
   res.json({
-    qr: null,
-    status: "pending",
-    message: "QR code será gerado quando WhatsApp for implementado",
+    qrCode: mockQRCode,
+    status: "qr",
+    message: "QR code demo - escaneie para testar (não funcionará de verdade ainda)",
   })
 })
 
