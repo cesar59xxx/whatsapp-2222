@@ -140,6 +140,7 @@ app.get("/", (req, res) => {
       disconnect: "/api/whatsapp/sessions/:sessionId/disconnect",
       connect: "/api/whatsapp/sessions/:sessionId/connect",
       sendMessage: "/api/whatsapp/send",
+      debugWhatsApp: "/api/debug/whatsapp",
     },
   })
 })
@@ -187,6 +188,7 @@ app.post("/api/whatsapp/sessions", async (req, res) => {
     }
 
     const sessionId = `session-${Date.now()}`
+    console.log("[v0] Creating session with ID:", sessionId)
 
     const { data: newSession, error } = await supabase
       .from("whatsapp_sessions")
@@ -201,7 +203,12 @@ app.post("/api/whatsapp/sessions", async (req, res) => {
       .select()
       .single()
 
-    if (error) throw error
+    if (error) {
+      console.error("[v0] Supabase error creating session:", error)
+      throw error
+    }
+
+    console.log("[v0] Session created in Supabase:", newSession)
 
     const transformedSession = {
       _id: newSession.id,
@@ -211,12 +218,18 @@ app.post("/api/whatsapp/sessions", async (req, res) => {
       isConnected: false,
     }
 
+    console.log("[v0] Starting WhatsApp initialization in 1 second...")
+
     setTimeout(async () => {
       try {
+        console.log(`[v0] Initializing WhatsApp for session: ${sessionId}`)
         await whatsappManager.initializeSession(sessionId)
-        console.log(`[v0] Auto-initialized WhatsApp session: ${sessionId}`)
+        console.log(`[v0] WhatsApp initialized successfully: ${sessionId}`)
       } catch (error) {
-        console.error(`[v0] Failed to auto-initialize session ${sessionId}:`, error)
+        console.error(`[v0] Failed to initialize WhatsApp session ${sessionId}:`, error)
+        console.error(`[v0] Error stack:`, error.stack)
+
+        await supabase.from("whatsapp_sessions").update({ status: "error" }).eq("session_id", sessionId)
       }
     }, 1000)
 
@@ -226,7 +239,7 @@ app.post("/api/whatsapp/sessions", async (req, res) => {
       session: transformedSession,
     })
   } catch (error) {
-    console.error("Error creating session:", error)
+    console.error("[v0] Error creating session:", error)
     res.status(500).json({ error: error.message })
   }
 })
@@ -308,6 +321,31 @@ app.post("/api/whatsapp/send", async (req, res) => {
   } catch (error) {
     console.error("Error sending message:", error)
     res.status(500).json({ error: error.message })
+  }
+})
+
+app.get("/api/debug/whatsapp", async (req, res) => {
+  try {
+    const { data: sessions } = await supabase.from("whatsapp_sessions").select("*")
+
+    const whatsappStatus = {
+      isManagerLoaded: !!whatsappManager,
+      managerType: typeof whatsappManager,
+      activeSessions: whatsappManager?.clients ? Object.keys(whatsappManager.clients).length : 0,
+      supabaseSessions: sessions?.length || 0,
+      environmentVars: {
+        hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+        hasSupabaseKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        hasServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+        nodeVersion: process.version,
+        platform: process.platform,
+      },
+    }
+
+    res.json(whatsappStatus)
+  } catch (error) {
+    console.error("[v0] Debug endpoint error:", error)
+    res.status(500).json({ error: error.message, stack: error.stack })
   }
 })
 
